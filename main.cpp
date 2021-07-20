@@ -18,6 +18,7 @@
 #include "timer_wheel.h"
 #include "log.h"
 #include "sql_connection_pool.h"
+#include "redis_pool.h"
 
 #define MAXFD               65535
 #define MAX_EVENT_NUMBER    10000
@@ -171,6 +172,16 @@ int main(int argc, char* argv[])
 
     // 初始化数据库读取表
     users->initmysql_result(connPool);
+
+    /*启动redis池*/
+    RedisPool* redisPool;
+    const char* redis_url = "127.0.0.1";
+    const char* redis_port = "6379";
+    int redis_num = 8;
+
+    // 初始化redis连接池
+    redisPool = RedisPool::GetInstance();
+    redisPool->init(redis_url, redis_port, redis_num);
 
     while (1)
     {

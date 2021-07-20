@@ -1,6 +1,7 @@
 #include "http_conn.h"
 #include "threadpool.h"
 #include "log.h"
+#include "redis_pool.h"
 
 #include <mysql/mysql.h>
 #include <fstream>
@@ -64,26 +65,26 @@ void modfd(int epollfd, int fd, int ev)
 }
 
 void http_conn::initmysql_result(connection_pool *connPool) {
-    //先从连接池中取一个连接
+    // 先从连接池中取一个连接
     MYSQL *mysql = NULL;
     connectionRAII mysqlconn(&mysql, connPool);
 
-    //在user表中检索username，passwd数据，浏览器端输入
+    // 在user表中检索username，passwd数据，浏览器端输入
     if (mysql_query(mysql, "SELECT username,passwd FROM user"))
     {
         LOG_ERROR("SELECT error:%s\n", mysql_error(mysql));
     }
 
-    //从表中检索完整的结果集
+    // 从表中检索完整的结果集
     MYSQL_RES *result = mysql_store_result(mysql);
 
-    //返回结果集中的列数
+    // 返回结果集中的列数
     int num_fields = mysql_num_fields(result);
 
-    //返回所有字段结构的数组
+    // 返回所有字段结构的数组
     MYSQL_FIELD *fields = mysql_fetch_fields(result);
 
-    //从结果集中获取下一行，将对应的用户名和密码，存入map中
+    // 从结果集中获取下一行，将对应的用户名和密码，存入map中
     while (MYSQL_ROW row = mysql_fetch_row(result))
     {
         string temp1(row[0]);
@@ -397,7 +398,6 @@ http_conn::HTTP_CODE http_conn::do_request()
             // 没有重名的，进行增加数据
             if (!mysql) {
                 Log::get_instance()->write_log(3, "mysql error: %s", mysql_error(mysql));
-                // std::cout << "mysql error: " << mysql_error(mysql) << std::endl;
             }
             char *sql_insert = (char *)malloc(sizeof(char) * 200);
             strcpy(sql_insert, "INSERT INTO user(username, passwd) VALUES(");
@@ -424,14 +424,56 @@ http_conn::HTTP_CODE http_conn::do_request()
                 strcpy(m_url, "/registerError.html");
             }
         } 
-        //如果是登录，直接判断
-        //若浏览器端输入的用户名和密码在表中可以查找到，返回1，否则返回0
+        // 如果是登录，直接判断
+        // 若浏览器端输入的用户名和密码在表中可以查找到，返回1，否则返回0
         else if (*(p + 1) == '2') {
-            if (user.find(name) != user.end() && user[name] == password) {
+            string redis_password = RedisPool::GetInstance()->getString(name);
+            if (redis_password == password) {
                 strcpy(m_url, "/welcome.html");
+            } else if (redis_password == "error") {
+
+            } else if (redis_password == "") {
+                // 先从连接池中取一个连接
+                MYSQL *mysql = NULL;
+                connectionRAII mysqlconn(&mysql, connection_pool::GetInstance());
+
+                // 在user表中检索username，passwd数据，浏览器端输入
+                if (mysql_query(mysql, "SELECT username,passwd FROM user"))
+                {
+                    LOG_ERROR("SELECT error:%s\n", mysql_error(mysql));
+                }
+
+                // 从表中检索完整的结果集
+                MYSQL_RES *result = mysql_store_result(mysql);
+
+                // 返回结果集中的列数
+                int num_fields = mysql_num_fields(result);
+
+                // 返回所有字段结构的数组
+                MYSQL_FIELD *fields = mysql_fetch_fields(result);
+
+                // 从结果集中获取下一行，一一比对
+                bool password_is_true = false;
+                int count1 = 0;
+                while (MYSQL_ROW row = mysql_fetch_row(result))
+                {
+                    cout << ++count1 << endl;
+                    string temp1(row[0]);
+                    string temp2(row[1]);
+                    if (temp1 == name && temp2 == password) {
+                        RedisPool::GetInstance()->setString(name, password);
+                        password_is_true = true;
+                        strcpy(m_url, "/welcome.html");
+                        break;
+                    }
+                }
+                if (!password_is_true) {
+                    strcpy(m_url, "/logError.html");
+                }
             } else {
                 strcpy(m_url, "/logError.html");
             }
+            
         }
     }
 
