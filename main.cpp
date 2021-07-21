@@ -170,8 +170,8 @@ int main(int argc, char* argv[])
     connPool->init("localhost", user, passWord, databaseName, port, sql_num);
     // connPool->init("192.168.136.123:858", user, passWord, databaseName, port, sql_num);
 
-    // 初始化数据库读取表
-    users->initmysql_result(connPool);
+    // // 初始化数据库读取表
+    // users->initmysql_result(connPool);
 
     /*启动redis池*/
     RedisPool* redisPool;

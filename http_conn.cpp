@@ -23,7 +23,7 @@ const char* doc_root = "/home/ltl/testLinux_code/myWebServer/4/root/";
 int http_conn::m_user_count = 0;
 int http_conn::m_epollfd = -1;
 locker m_lock;
-map<string, string> user;
+// map<string, string> user;
 
 int setnonblocking(int sockfd)
 {
@@ -64,6 +64,7 @@ void modfd(int epollfd, int fd, int ev)
     epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &event);
 }
 
+/*
 void http_conn::initmysql_result(connection_pool *connPool) {
     // 先从连接池中取一个连接
     MYSQL *mysql = NULL;
@@ -96,6 +97,7 @@ void http_conn::initmysql_result(connection_pool *connPool) {
     // printf("query execute:%s\n", query.c_str());
     // int t = mysql_query(mysql, query.c_str());
 }
+*/
 
 // init-----------------
 
@@ -408,11 +410,39 @@ http_conn::HTTP_CODE http_conn::do_request()
             strcat(sql_insert, "')");
             Log::get_instance()->write_log(1, sql_insert);
 
-            if (user.find(name) == user.end()) {
+            // 在user表中检索username，passwd数据，浏览器端输入
+            if (mysql_query(mysql, "SELECT username,passwd FROM user"))
+            {
+                LOG_ERROR("SELECT error:%s\n", mysql_error(mysql));
+            }
+
+            // 从表中检索完整的结果集
+            MYSQL_RES *result = mysql_store_result(mysql);
+
+            // 返回结果集中的列数
+            int num_fields = mysql_num_fields(result);
+
+            // 返回所有字段结构的数组
+            MYSQL_FIELD *fields = mysql_fetch_fields(result);
+
+            // 从结果集中获取下一行，一一比对
+            bool password_is_true = false;
+            while (MYSQL_ROW row = mysql_fetch_row(result))
+            {
+                string temp1(row[0]);
+                string temp2(row[1]);
+                if (temp1 == name && temp2 == password) {
+                    RedisPool::GetInstance()->setString(name, password);
+                    password_is_true = true;
+                    strcpy(m_url, "/welcome.html");
+                    break;
+                }
+            }
+            if (!password_is_true) {
                 m_lock.lock();
                 
                 int res = mysql_query(mysql, sql_insert);
-                user.insert(pair<string, string>(name, password));
+                // user.insert(pair<string, string>(name, password));
                 m_lock.unlock();
 
                 if (!res) {
@@ -423,6 +453,24 @@ http_conn::HTTP_CODE http_conn::do_request()
             } else {
                 strcpy(m_url, "/registerError.html");
             }
+
+            // if (user.find(name) == user.end()) {
+            //     m_lock.lock();
+                
+            //     int res = mysql_query(mysql, sql_insert);
+            //     user.insert(pair<string, string>(name, password));
+            //     m_lock.unlock();
+
+            //     if (!res) {
+            //         strcpy(m_url, "/log.html");
+            //     } else {
+            //         strcpy(m_url, "/registerError.html");
+            //     }
+            // } else {
+            //     strcpy(m_url, "/registerError.html");
+            // }
+            
+            
         } 
         // 如果是登录，直接判断
         // 若浏览器端输入的用户名和密码在表中可以查找到，返回1，否则返回0
@@ -454,10 +502,8 @@ http_conn::HTTP_CODE http_conn::do_request()
 
                 // 从结果集中获取下一行，一一比对
                 bool password_is_true = false;
-                int count1 = 0;
                 while (MYSQL_ROW row = mysql_fetch_row(result))
                 {
-                    cout << ++count1 << endl;
                     string temp1(row[0]);
                     string temp2(row[1]);
                     if (temp1 == name && temp2 == password) {
@@ -510,7 +556,7 @@ http_conn::HTTP_CODE http_conn::do_request()
     } else {
         strncpy(m_read_file + len, m_url, FILENAME_LEN - len - 1);
     }
-
+    // cout << *(p + 1) << " " << m_url << endl;
     // stat：获取文件状态
     if (stat(m_read_file, & m_file_stat) < 0)
     {
